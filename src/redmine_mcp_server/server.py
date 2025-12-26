@@ -55,6 +55,28 @@ def _load_cache():
         return json.loads(CACHE_FILE.read_text())
     return None
 
+def _get_custom_field_ids(issue_id: int, cache: dict) -> dict:
+    """Get custom field IDs từ cache hoặc fetch từ issue"""
+    if cache and "custom_fields" in cache and cache["custom_fields"]:
+        return cache["custom_fields"]
+    
+    try:
+        data = api_request("GET", f"/issues/{issue_id}.json")
+        cf_ids = {}
+        for cf in data["issue"].get("custom_fields", []):
+            name_normalized = cf["name"].lower().replace(" ", "").replace("_", "").replace(".", "")
+            if "actstart" in name_normalized:
+                cf_ids["act.start"] = cf["id"]
+            elif "actfinish" in name_normalized:
+                cf_ids["act.finish"] = cf["id"]
+        
+        if cf_ids and cache:
+            cache["custom_fields"] = cf_ids
+            _save_cache(cache)
+        return cf_ids
+    except Exception:
+        return {}
+
 def _save_cache(data):
     CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
     CACHE_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False))
@@ -188,12 +210,19 @@ def log_time(issue_id: int, hours: float, comment: str) -> str:
         return f"Lỗi log time: {str(e)}"
 
 @mcp.tool()
-def update_issue_status(issue_id: int, status_name: str) -> str:
+def update_issue_status(
+    issue_id: int, 
+    status_name: str,
+    act_start: Optional[str] = None,
+    act_finish: Optional[str] = None
+) -> str:
     """
     Cập nhật trạng thái của task.
     Args:
         issue_id: ID của task
-        status_name: Tên trạng thái (ví dụ: 'resolved', 'in progress', 'feedback')
+        status_name: Tên trạng thái (ví dụ: 'resolved', 'in progress', 'completed')
+        act_start: Ngày bắt đầu thực tế (YYYY-MM-DD). Bắt buộc khi status=completed. Default: today
+        act_finish: Ngày kết thúc thực tế (YYYY-MM-DD). Bắt buộc khi status=completed. Default: today
     """
     _ensure_metadata()
     cache = _load_cache()
@@ -204,11 +233,31 @@ def update_issue_status(issue_id: int, status_name: str) -> str:
         return f"❌ Status '{status_name}' không hợp lệ. Các status khả dụng: {valid_statuses}"
 
     status_id = cache["statuses"][status_lower]
-    data = {"issue": {"status_id": status_id}}
+    issue_data = {"status_id": status_id}
+    
+    if status_lower == "completed":
+        today = date.today().isoformat()
+        act_start = act_start or today
+        act_finish = act_finish or today
+        
+        cf_ids = _get_custom_field_ids(issue_id, cache)
+        custom_fields = []
+        
+        if "act.start" in cf_ids:
+            custom_fields.append({"id": cf_ids["act.start"], "value": act_start})
+        if "act.finish" in cf_ids:
+            custom_fields.append({"id": cf_ids["act.finish"], "value": act_finish})
+        
+        if custom_fields:
+            issue_data["custom_fields"] = custom_fields
+            issue_data["done_ratio"] = 100
     
     try:
-        api_request("PUT", f"/issues/{issue_id}.json", data)
-        return f"✅ Đã đổi trạng thái task #{issue_id} sang '{status_name}'"
+        api_request("PUT", f"/issues/{issue_id}.json", {"issue": issue_data})
+        msg = f"✅ Đã đổi trạng thái task #{issue_id} sang '{status_name}'"
+        if status_lower == "completed":
+            msg += f"\n   Act.Start: {act_start}, Act.Finish: {act_finish}"
+        return msg
     except Exception as e:
         return f"Lỗi update status: {str(e)}"
 
