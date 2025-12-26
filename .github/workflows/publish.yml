@@ -1,6 +1,10 @@
 name: Publish to PyPI
 
 on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Cho phép trigger thủ công
   release:
     types: [published]
 
