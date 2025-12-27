@@ -11,6 +11,7 @@ MCP (Model Context Protocol) Server for Redmine - Manage tasks, log time, update
 - **Update Progress** - Set completion percentage (0-100%)
 - **Add Notes** - Add comments to issues
 - **Daily Summary** - Check today's logged hours
+- **Time Logs Range** - View logged hours within a date range
 
 ## Installation
 
@@ -71,6 +72,7 @@ Add to your Claude Desktop config (`~/.config/claude/claude_desktop_config.json`
 | `update_progress` | Update completion percentage |
 | `add_note` | Add a comment to an issue |
 | `get_today_logs` | View today's time entries and total hours |
+| `get_time_logs_range` | View time logs within a date range (from_date, to_date) |
 | `clear_cache` | Clear cached metadata |
 
 ## Examples
@@ -83,6 +85,7 @@ Ask Claude:
 - "Mark issue #789 as resolved"
 - "Update task #101 to 80% complete"
 - "How many hours have I logged today?"
+- "Show me my time logs from 2025-12-23 to 2025-12-27"
 
 ## Development
 
