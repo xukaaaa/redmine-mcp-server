@@ -310,6 +310,44 @@ def get_today_logs() -> str:
     return "\n".join(lines)
 
 @mcp.tool()
+def get_time_logs_range(from_date: str, to_date: str) -> str:
+    """
+    Xem tổng giờ đã log trong khoảng thời gian.
+    Args:
+        from_date: Ngày bắt đầu (YYYY-MM-DD)
+        to_date: Ngày kết thúc (YYYY-MM-DD)
+    """
+    try:
+        data = api_request("GET", f"/time_entries.json?user_id=me&from={from_date}&to={to_date}&limit=100")
+        entries = data.get("time_entries", [])
+    except Exception as e:
+        return f"Lỗi lấy log: {str(e)}"
+
+    if not entries:
+        return f"📭 Không có time log nào từ {from_date} đến {to_date}."
+
+    total = sum(e["hours"] for e in entries)
+    lines = [f"📅 Time log từ {from_date} đến {to_date}:\n"]
+    
+    by_date = {}
+    for e in entries:
+        spent_on = e.get("spent_on", "N/A")
+        if spent_on not in by_date:
+            by_date[spent_on] = []
+        by_date[spent_on].append(e)
+    
+    for day in sorted(by_date.keys()):
+        day_entries = by_date[day]
+        day_total = sum(e["hours"] for e in day_entries)
+        lines.append(f"\n[{day}] - {day_total}h:")
+        for e in day_entries:
+            issue_id = e.get("issue", {}).get("id", "N/A")
+            lines.append(f"  - #{issue_id}: {e['hours']}h ({e.get('comments', 'No comment')})")
+    
+    lines.append(f"\n⏱️  Tổng cộng: {total}h")
+    return "\n".join(lines)
+
+@mcp.tool()
 def clear_cache() -> str:
     """Xóa cache để reload metadata từ Redmine"""
     try:
