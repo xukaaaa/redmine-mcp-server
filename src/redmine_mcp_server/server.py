@@ -164,6 +164,7 @@ def get_issue_details(issue_id: int) -> str:
         f"Status:     {issue['status']['name']}",
         f"Progress:   {issue.get('done_ratio', 0)}%",
         f"Assigned:   {issue.get('assigned_to', {}).get('name', 'N/A')}",
+        f"Start date: {issue.get('start_date', 'N/A')}",
         f"Due date:   {issue.get('due_date', 'N/A')}",
         f"Spent:      {issue.get('spent_hours', 0)}h / Est: {issue.get('estimated_hours', 'N/A')}h"
     ]
