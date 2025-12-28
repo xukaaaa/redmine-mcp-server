@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xukaaaa-redmine-mcp"
-version = "0.1.2"
+version = "0.1.3"
 description = "MCP Server for Redmine - Manage tasks, log time, update status via Claude/AI assistants"
 readme = "README.md"
 license = {text = "MIT"}

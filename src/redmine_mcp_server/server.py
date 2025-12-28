@@ -153,7 +153,7 @@ def list_my_tasks(status_filter: str = "open") -> str:
 def get_issue_details(issue_id: int) -> str:
     """Xem chi tiết một task cụ thể bằng ID."""
     try:
-        data = api_request("GET", f"/issues/{issue_id}.json?include=journals")
+        data = api_request("GET", f"/issues/{issue_id}.json?include=journals,children")
         issue = data["issue"]
     except Exception as e:
         return f"Không tìm thấy issue #{issue_id}. Error: {str(e)}"
@@ -168,6 +168,14 @@ def get_issue_details(issue_id: int) -> str:
         f"Due date:   {issue.get('due_date', 'N/A')}",
         f"Spent:      {issue.get('spent_hours', 0)}h / Est: {issue.get('estimated_hours', 'N/A')}h"
     ]
+
+    if issue.get("parent"):
+        lines.append(f"Parent:     #{issue['parent']['id']}")
+
+    if issue.get("children"):
+        lines.append(f"\nSubtasks ({len(issue['children'])}):")
+        for child in issue['children']:
+            lines.append(f"  - #{child['id']}: {child.get('subject', 'N/A')}")
 
     if issue.get("description"):
         lines.append(f"\nDescription:\n{issue['description'][:500]}...")
