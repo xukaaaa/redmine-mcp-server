@@ -1,0 +1,10 @@
+{
+  "buildCommand": "npm run vercel-build",
+  "framework": null,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api/mcp/route"
+    }
+  ]
+}
