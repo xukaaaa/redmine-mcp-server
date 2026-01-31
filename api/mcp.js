@@ -88,7 +88,14 @@ const redmineClient = new RedmineClient({ baseUrl: REDMINE_URL, apiKey: REDMINE_
 
 const handler = createMcpHandler(
   (server) => {
-    server.tool('list_my_tasks', 'List tasks assigned to you', z.object({ status_filter: z.enum(['open', 'closed', 'all']).default('open') }), async ({ status_filter }) => {
+    // Tool 1: List my tasks
+    server.registerTool('list_my_tasks', {
+      title: 'List My Tasks',
+      description: 'List tasks assigned to you with status filtering',
+      inputSchema: {
+        status_filter: z.enum(['open', 'closed', 'all']).default('open').describe('Status filter: open, closed, or all'),
+      },
+    }, async ({ status_filter }) => {
       try {
         const issues = await redmineClient.getMyIssues(status_filter);
         if (issues.length === 0) return { content: [{ type: 'text', text: '📭 No tasks found.' }] };
@@ -103,35 +110,95 @@ const handler = createMcpHandler(
       }
     });
 
-    server.tool('get_issue_details', 'Get issue details', z.object({ issue_id: z.number().int().positive() }), async ({ issue_id }) => {
+    // Tool 2: Get issue details
+    server.registerTool('get_issue_details', {
+      title: 'Get Issue Details',
+      description: 'Get detailed information about a specific issue',
+      inputSchema: {
+        issue_id: z.number().int().positive().describe('Issue ID'),
+      },
+    }, async ({ issue_id }) => {
       try {
         const issue = await redmineClient.getIssueDetails(issue_id);
-        let result = `#${issue.id} - ${issue.subject}\n\nProject: ${issue.project.name}\nStatus: ${issue.status.name}\nProgress: ${issue.done_ratio || 0}%\n`;
+        let result = `#${issue.id} - ${issue.subject}\n\n`;
+        result += `Project:    ${issue.project.name}\n`;
+        result += `Status:     ${issue.status.name}\n`;
+        result += `Progress:   ${issue.done_ratio || 0}%\n`;
+        result += `Assigned:   ${issue.assigned_to?.name || 'N/A'}\n`;
+        result += `Start date: ${issue.start_date || 'N/A'}\n`;
+        result += `Due date:   ${issue.due_date || 'N/A'}\n`;
+        result += `Spent:      ${issue.spent_hours || 0}h / Est: ${issue.estimated_hours || 'N/A'}h\n`;
+
+        if (issue.parent) {
+          result += `\nParent:     #${issue.parent.id}\n`;
+        }
+
+        if (issue.children && issue.children.length > 0) {
+          result += `\nSubtasks (${issue.children.length}):\n`;
+          for (const child of issue.children) {
+            result += `  - #${child.id}: ${child.subject}\n`;
+          }
+        }
+
+        if (issue.description) {
+          const desc = issue.description.substring(0, 500);
+          result += `\nDescription:\n${desc}${issue.description.length > 500 ? '...' : ''}\n`;
+        }
+
         return { content: [{ type: 'text', text: result }] };
       } catch (error) {
         return { content: [{ type: 'text', text: `❌ Error: ${error.message}` }] };
       }
     });
 
-    server.tool('log_time', 'Log time entry', z.object({ issue_id: z.number().int().positive(), hours: z.number().positive(), comment: z.string(), activity_id: z.number().int().optional(), spent_on: z.string().optional() }), async (params) => {
+    // Tool 3: Log time
+    server.registerTool('log_time', {
+      title: 'Log Time Entry',
+      description: 'Log time entry on a task',
+      inputSchema: {
+        issue_id: z.number().int().positive().describe('Issue ID'),
+        hours: z.number().positive().describe('Hours spent (e.g., 1.5)'),
+        comment: z.string().describe('Work description'),
+        activity_id: z.number().int().optional().describe('Activity ID (optional, defaults to 9)'),
+        spent_on: z.string().optional().describe('Date in YYYY-MM-DD format (optional, defaults to today)'),
+      },
+    }, async (params) => {
       try {
         await redmineClient.logTime(params);
-        return { content: [{ type: 'text', text: `✅ Logged ${params.hours}h on task #${params.issue_id}` }] };
+        let result = `✅ Logged ${params.hours}h on task #${params.issue_id}\n`;
+        result += `   Comment: ${params.comment}`;
+        return { content: [{ type: 'text', text: result }] };
       } catch (error) {
         return { content: [{ type: 'text', text: `❌ Error: ${error.message}` }] };
       }
     });
 
-    server.tool('update_issue_status', 'Change issue status', z.object({ issue_id: z.number().int().positive(), status_id: z.number().int().positive() }), async ({ issue_id, status_id }) => {
+    // Tool 4: Update issue status
+    server.registerTool('update_issue_status', {
+      title: 'Update Issue Status',
+      description: 'Change issue status',
+      inputSchema: {
+        issue_id: z.number().int().positive().describe('Issue ID'),
+        status_id: z.number().int().positive().describe('Status ID (e.g., 1=New, 2=In Progress, 3=Resolved)'),
+      },
+    }, async ({ issue_id, status_id }) => {
       try {
         await redmineClient.updateIssueStatus(issue_id, status_id);
-        return { content: [{ type: 'text', text: `✅ Updated task #${issue_id}` }] };
+        return { content: [{ type: 'text', text: `✅ Updated task #${issue_id} status to ${status_id}` }] };
       } catch (error) {
         return { content: [{ type: 'text', text: `❌ Error: ${error.message}` }] };
       }
     });
 
-    server.tool('update_progress', 'Update completion %', z.object({ issue_id: z.number().int().positive(), percent: z.number().int().min(0).max(100) }), async ({ issue_id, percent }) => {
+    // Tool 5: Update progress
+    server.registerTool('update_progress', {
+      title: 'Update Progress',
+      description: 'Update task completion percentage (0-100)',
+      inputSchema: {
+        issue_id: z.number().int().positive().describe('Issue ID'),
+        percent: z.number().int().min(0).max(100).describe('Completion percentage (0-100)'),
+      },
+    }, async ({ issue_id, percent }) => {
       try {
         await redmineClient.updateProgress(issue_id, percent);
         return { content: [{ type: 'text', text: `✅ Updated task #${issue_id} to ${percent}%` }] };
@@ -140,7 +207,15 @@ const handler = createMcpHandler(
       }
     });
 
-    server.tool('add_note', 'Add comment', z.object({ issue_id: z.number().int().positive(), note: z.string() }), async ({ issue_id, note }) => {
+    // Tool 6: Add note
+    server.registerTool('add_note', {
+      title: 'Add Note',
+      description: 'Add a comment/note to an issue',
+      inputSchema: {
+        issue_id: z.number().int().positive().describe('Issue ID'),
+        note: z.string().describe('Comment text'),
+      },
+    }, async ({ issue_id, note }) => {
       try {
         await redmineClient.addNote(issue_id, note);
         return { content: [{ type: 'text', text: `✅ Added note to task #${issue_id}` }] };
@@ -149,27 +224,76 @@ const handler = createMcpHandler(
       }
     });
 
-    server.tool('get_today_logs', "Today's time logs", z.object({}), async () => {
+    // Tool 7: Get today's logs
+    server.registerTool('get_today_logs', {
+      title: "Get Today's Logs",
+      description: "View today's time entries and total hours",
+      inputSchema: {},
+    }, async () => {
       try {
         const entries = await redmineClient.getTodayLogs();
+        const today = new Date().toISOString().split('T')[0];
         const total = entries.reduce((sum, e) => sum + e.hours, 0);
-        let result = `📅 Today's logs:\n\n`;
+
+        let result = `📅 Time log for today (${today}):\n\n`;
         for (const entry of entries) {
-          result += `- #${entry.issue?.id || 'N/A'}: ${entry.hours}h\n`;
+          const issueId = entry.issue?.id || 'N/A';
+          const comment = entry.comments || 'No comment';
+          result += `- #${issueId}: ${entry.hours}h (${comment})\n`;
         }
+
         result += `\n⏱️  Total: ${total}h\n`;
+        if (total < 8) {
+          result += `⚠️  Need ${8 - total}h more to reach 8h.\n`;
+        } else {
+          result += '✅ Logged enough hours!\n';
+        }
+
         return { content: [{ type: 'text', text: result }] };
       } catch (error) {
         return { content: [{ type: 'text', text: `❌ Error: ${error.message}` }] };
       }
     });
 
-    server.tool('get_time_logs_range', 'Time logs by date range', z.object({ from_date: z.string(), to_date: z.string() }), async ({ from_date, to_date }) => {
+    // Tool 8: Get time logs range
+    server.registerTool('get_time_logs_range', {
+      title: 'Get Time Logs Range',
+      description: 'View time logs within a date range',
+      inputSchema: {
+        from_date: z.string().describe('Start date (YYYY-MM-DD)'),
+        to_date: z.string().describe('End date (YYYY-MM-DD)'),
+      },
+    }, async ({ from_date, to_date }) => {
       try {
         const entries = await redmineClient.getTimeLogsRange(from_date, to_date);
-        if (entries.length === 0) return { content: [{ type: 'text', text: `📭 No logs found` }] };
+
+        if (entries.length === 0) {
+          return { content: [{ type: 'text', text: `📭 No time logs from ${from_date} to ${to_date}` }] };
+        }
+
         const total = entries.reduce((sum, e) => sum + e.hours, 0);
-        let result = `📅 Logs from ${from_date} to ${to_date}:\n\nTotal: ${total}h\n`;
+        let result = `📅 Time logs from ${from_date} to ${to_date}:\n\n`;
+
+        // Group by date
+        const byDate = {};
+        for (const entry of entries) {
+          const date = entry.spent_on;
+          if (!byDate[date]) byDate[date] = [];
+          byDate[date].push(entry);
+        }
+
+        for (const date of Object.keys(byDate).sort()) {
+          const dayEntries = byDate[date];
+          const dayTotal = dayEntries.reduce((sum, e) => sum + e.hours, 0);
+          result += `\n[${date}] - ${dayTotal}h:\n`;
+          for (const entry of dayEntries) {
+            const issueId = entry.issue?.id || 'N/A';
+            const comment = entry.comments || 'No comment';
+            result += `  - #${issueId}: ${entry.hours}h (${comment})\n`;
+          }
+        }
+
+        result += `\n⏱️  Total: ${total}h\n`;
         return { content: [{ type: 'text', text: result }] };
       } catch (error) {
         return { content: [{ type: 'text', text: `❌ Error: ${error.message}` }] };
