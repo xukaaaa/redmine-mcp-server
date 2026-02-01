@@ -2,6 +2,8 @@
 
 MCP (Model Context Protocol) Server for Redmine - Manage tasks, log time, update status via Claude/AI assistants.
 
+**Deployed on Vercel**: https://redmine-mcp-server.vercel.app
+
 ## Features
 
 - **List Tasks** - View tasks assigned to you with status filtering
@@ -13,67 +15,66 @@ MCP (Model Context Protocol) Server for Redmine - Manage tasks, log time, update
 - **Daily Summary** - Check today's logged hours
 - **Time Logs Range** - View logged hours within a date range
 
-## Installation
+## Quick Start
 
-```bash
-pip install xukaaaa-redmine-mcp
-```
-
-Or install from source:
-
-```bash
-git clone https://github.com/xukaaaa/redmine-mcp-server.git
-cd redmine-mcp-server
-pip install -e .
-```
-
-## Configuration
-
-Set the following environment variables:
-
-```bash
-export REDMINE_URL="https://your-redmine-instance.com"
-export REDMINE_API_KEY="your-api-key"
-```
-
-### Getting your Redmine API Key
+### 1. Get Your Redmine API Key
 
 1. Log in to your Redmine instance
 2. Go to **My Account** (top right)
 3. Find **API access key** on the right sidebar
 4. Click **Show** or **Reset** to get your key
 
-## Usage with Claude Desktop
+### 2. Configure in Cursor/Claude Code
 
-Add to your Claude Desktop config (`~/.config/claude/claude_desktop_config.json` on Linux/Mac or `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
+#### Cursor
+
+Edit `.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "redmine": {
-      "command": "redmine-mcp-server",
-      "env": {
-        "REDMINE_URL": "https://your-redmine-instance.com",
-        "REDMINE_API_KEY": "your-api-key"
+      "url": "https://redmine-mcp-server.vercel.app/api/mcp?redmine_url=https://your-redmine.com&api_key=YOUR_API_KEY"
+    }
+  }
+}
+```
+
+#### Claude Desktop
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "transport": {
+        "type": "http",
+        "url": "https://redmine-mcp-server.vercel.app/api/mcp?redmine_url=https://your-redmine.com&api_key=YOUR_API_KEY"
       }
     }
   }
 }
 ```
 
+#### CLI
+
+```bash
+claude mcp add --transport http redmine "https://redmine-mcp-server.vercel.app/api/mcp?redmine_url=https://your-redmine.com&api_key=YOUR_API_KEY"
+```
+
 ## Available Tools
 
-| Tool | Description |
-|------|-------------|
-| `list_my_tasks` | List tasks assigned to you (filter: open/closed/status name) |
-| `get_issue_details` | Get detailed info about a specific issue |
-| `log_time` | Log time entry with hours and comment |
-| `update_issue_status` | Change issue status |
-| `update_progress` | Update completion percentage |
-| `add_note` | Add a comment to an issue |
-| `get_today_logs` | View today's time entries and total hours |
-| `get_time_logs_range` | View time logs within a date range (from_date, to_date) |
-| `clear_cache` | Clear cached metadata |
+| Tool | Description | Parameters |
+|------|-------------|-----------|
+| `list_my_tasks` | List tasks assigned to you | `status_filter`: open/closed/all |
+| `get_issue_details` | Get detailed info about an issue | `issue_id`: number |
+| `log_time` | Log time entry | `issue_id`, `hours`, `comment`, `activity_id` (opt), `spent_on` (opt) |
+| `update_issue_status` | Change issue status | `issue_id`, `status_id` |
+| `update_progress` | Update completion percentage | `issue_id`, `percent` (0-100) |
+| `add_note` | Add a comment to an issue | `issue_id`, `note` |
+| `get_today_logs` | View today's time entries | - |
+| `get_time_logs_range` | View time logs by date range | `from_date`, `to_date` (YYYY-MM-DD) |
 
 ## Examples
 
@@ -85,21 +86,59 @@ Ask Claude:
 - "Mark issue #789 as resolved"
 - "Update task #101 to 80% complete"
 - "How many hours have I logged today?"
-- "Show me my time logs from 2025-12-23 to 2025-12-27"
+- "Show me my time logs from 2025-01-20 to 2025-01-31"
+
+## Multi-tenant Architecture
+
+This server supports **multi-tenant** usage via URL parameters:
+
+```
+https://redmine-mcp-server.vercel.app/api/mcp?redmine_url=YOUR_URL&api_key=YOUR_KEY
+```
+
+Each user provides their own:
+- `redmine_url`: Your Redmine instance URL
+- `api_key`: Your Redmine API key
+
+**No fallback to environment variables** - credentials must be provided in URL params.
 
 ## Development
+
+### Local Setup
 
 ```bash
 # Clone the repo
 git clone https://github.com/xukaaaa/redmine-mcp-server.git
 cd redmine-mcp-server
 
-# Install in development mode
-pip install -e .
+# Install dependencies
+npm install
 
-# Run the server
-redmine-mcp-server
+# Build TypeScript
+npm run build
+
+# Run locally (requires mcp-handler setup)
+npm run dev
 ```
+
+### Deploy to Vercel
+
+```bash
+# Install Vercel CLI
+npm install -g vercel
+
+# Deploy
+vercel --prod
+```
+
+## Tech Stack
+
+- **Runtime**: Node.js 18+
+- **Language**: JavaScript (ES modules)
+- **MCP Handler**: mcp-handler
+- **Validation**: Zod
+- **Deployment**: Vercel Serverless Functions
+- **Transport**: HTTP (Streamable HTTP/SSE)
 
 ## License
 

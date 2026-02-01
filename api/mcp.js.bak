@@ -1,0 +1,178 @@
+/**
+ * Vercel API Route - MCP Server Endpoint
+ */
+
+import { createMcpHandler } from 'mcp-handler';
+import { z } from 'zod';
+
+const REDMINE_URL = process.env.REDMINE_URL;
+const REDMINE_API_KEY = process.env.REDMINE_API_KEY;
+
+if (!REDMINE_URL || !REDMINE_API_KEY) {
+  throw new Error('Missing REDMINE_URL and REDMINE_API_KEY');
+}
+
+class RedmineClient {
+  constructor(config) {
+    this.config = config;
+  }
+
+  async request(method, endpoint, data) {
+    const url = `${this.config.baseUrl}${endpoint}`;
+    const headers = {
+      'X-Redmine-API-Key': this.config.apiKey,
+      'Content-Type': 'application/json',
+    };
+    const options = { method, headers };
+    if (data) options.body = JSON.stringify(data);
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Redmine API Error ${response.status}: ${errorText}`);
+    }
+    if (response.status === 204) return {};
+    return response.json();
+  }
+
+  async getMyIssues(statusFilter = 'open') {
+    let endpoint = '/issues.json?assigned_to_id=me&limit=25';
+    if (statusFilter === 'open' || statusFilter === 'closed') {
+      endpoint += `&status_id=${statusFilter}`;
+    }
+    const data = await this.request('GET', endpoint);
+    return data.issues || [];
+  }
+
+  async getIssueDetails(issueId) {
+    const data = await this.request('GET', `/issues/${issueId}.json?include=journals,children`);
+    return data.issue;
+  }
+
+  async logTime(params) {
+    const timeEntry = {
+      issue_id: params.issue_id,
+      hours: params.hours,
+      comments: params.comment,
+      activity_id: params.activity_id || 9,
+      spent_on: params.spent_on || new Date().toISOString().split('T')[0],
+    };
+    await this.request('POST', '/time_entries.json', { time_entry: timeEntry });
+  }
+
+  async updateIssueStatus(issueId, statusId) {
+    await this.request('PUT', `/issues/${issueId}.json`, { issue: { status_id: statusId } });
+  }
+
+  async updateProgress(issueId, percent) {
+    await this.request('PUT', `/issues/${issueId}.json`, { issue: { done_ratio: percent } });
+  }
+
+  async addNote(issueId, note) {
+    await this.request('PUT', `/issues/${issueId}.json`, { issue: { notes: note } });
+  }
+
+  async getTodayLogs() {
+    const today = new Date().toISOString().split('T')[0];
+    const data = await this.request('GET', `/time_entries.json?user_id=me&from=${today}&to=${today}&limit=100`);
+    return data.time_entries || [];
+  }
+
+  async getTimeLogsRange(fromDate, toDate) {
+    const data = await this.request('GET', `/time_entries.json?user_id=me&from=${fromDate}&to=${toDate}&limit=100`);
+    return data.time_entries || [];
+  }
+}
+
+const redmineClient = new RedmineClient({ baseUrl: REDMINE_URL, apiKey: REDMINE_API_KEY });
+
+const handler = createMcpHandler((server) => {
+  server.tool('list_my_tasks', 'List tasks assigned to you', z.object({ status_filter: z.enum(['open', 'closed', 'all']).default('open') }), async ({ status_filter }) => {
+    try {
+      const issues = await redmineClient.getMyIssues(status_filter);
+      if (issues.length === 0) return { content: [{ type: 'text', text: '?? No tasks found.' }] };
+      let result = `?? Tasks (${issues.length}):\n\n`;
+      for (const issue of issues) {
+        result += `- #${issue.id} [${issue.status.name}] ${issue.done_ratio || 0}%: ${issue.subject}\n`;
+        result += `  (Due: ${issue.due_date || 'N/A'} | Project: ${issue.project.name})\n`;
+      }
+      return { content: [{ type: 'text', text: result }] };
+    } catch (error) {
+      return { content: [{ type: 'text', text: `? Error: ${error.message}` }] };
+    }
+  });
+
+  server.tool('get_issue_details', 'Get issue details', z.object({ issue_id: z.number().int().positive() }), async ({ issue_id }) => {
+    try {
+      const issue = await redmineClient.getIssueDetails(issue_id);
+      let result = `#${issue.id} - ${issue.subject}\n\nProject: ${issue.project.name}\nStatus: ${issue.status.name}\nProgress: ${issue.done_ratio || 0}%\n`;
+      return { content: [{ type: 'text', text: result }] };
+    } catch (error) {
+      return { content: [{ type: 'text', text: `? Error: ${error.message}` }] };
+    }
+  });
+
+  server.tool('log_time', 'Log time entry', z.object({ issue_id: z.number().int().positive(), hours: z.number().positive(), comment: z.string(), activity_id: z.number().int().optional(), spent_on: z.string().optional() }), async (params) => {
+    try {
+      await redmineClient.logTime(params);
+      return { content: [{ type: 'text', text: `? Logged ${params.hours}h on task #${params.issue_id}` }] };
+    } catch (error) {
+      return { content: [{ type: 'text', text: `? Error: ${error.message}` }] };
+    }
+  });
+
+  server.tool('update_issue_status', 'Change issue status', z.object({ issue_id: z.number().int().positive(), status_id: z.number().int().positive() }), async ({ issue_id, status_id }) => {
+    try {
+      await redmineClient.updateIssueStatus(issue_id, status_id);
+      return { content: [{ type: 'text', text: `? Updated task #${issue_id}` }] };
+    } catch (error) {
+      return { content: [{ type: 'text', text: `? Error: ${error.message}` }] };
+    }
+  });
+
+  server.tool('update_progress', 'Update completion %', z.object({ issue_id: z.number().int().positive(), percent: z.number().int().min(0).max(100) }), async ({ issue_id, percent }) => {
+    try {
+      await redmineClient.updateProgress(issue_id, percent);
+      return { content: [{ type: 'text', text: `? Updated task #${issue_id} to ${percent}%` }] };
+    } catch (error) {
+      return { content: [{ type: 'text', text: `? Error: ${error.message}` }] };
+    }
+  });
+
+  server.tool('add_note', 'Add comment', z.object({ issue_id: z.number().int().positive(), note: z.string() }), async ({ issue_id, note }) => {
+    try {
+      await redmineClient.addNote(issue_id, note);
+      return { content: [{ type: 'text', text: `? Added note to task #${issue_id}` }] };
+    } catch (error) {
+      return { content: [{ type: 'text', text: `? Error: ${error.message}` }] };
+    }
+  });
+
+  server.tool('get_today_logs', "Today's time logs", z.object({}), async () => {
+    try {
+      const entries = await redmineClient.getTodayLogs();
+      const total = entries.reduce((sum, e) => sum + e.hours, 0);
+      let result = `?? Today's logs:\n\n`;
+      for (const entry of entries) {
+        result += `- #${entry.issue?.id || 'N/A'}: ${entry.hours}h\n`;
+      }
+      result += `\n??  Total: ${total}h\n`;
+      return { content: [{ type: 'text', text: result }] };
+    } catch (error) {
+      return { content: [{ type: 'text', text: `? Error: ${error.message}` }] };
+    }
+  });
+
+  server.tool('get_time_logs_range', 'Time logs by date range', z.object({ from_date: z.string(), to_date: z.string() }), async ({ from_date, to_date }) => {
+    try {
+      const entries = await redmineClient.getTimeLogsRange(from_date, to_date);
+      if (entries.length === 0) return { content: [{ type: 'text', text: `?? No logs found` }] };
+      const total = entries.reduce((sum, e) => sum + e.hours, 0);
+      let result = `?? Logs from ${from_date} to ${to_date}:\n\nTotal: ${total}h\n`;
+      return { content: [{ type: 'text', text: result }] };
+    } catch (error) {
+      return { content: [{ type: 'text', text: `? Error: ${error.message}` }] };
+    }
+  });
+});
+
+export { handler as GET, handler as POST, handler as DELETE };

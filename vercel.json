@@ -1,0 +1,7 @@
+{
+  "buildCommand": "",
+  "outputDirectory": ".",
+  "env": {
+    "NODE_ENV": "production"
+  }
+}
