@@ -30,10 +30,13 @@ class RedmineClient {
     return response.json();
   }
 
-  async getMyIssues(statusFilter = 'open') {
-    let endpoint = '/issues.json?assigned_to_id=me&limit=25';
+  async getMyIssues(statusFilter = 'open', projectId = null, assignedToId = 'me') {
+    let endpoint = `/issues.json?assigned_to_id=${assignedToId}&limit=25`;
     if (statusFilter === 'open' || statusFilter === 'closed') {
       endpoint += `&status_id=${statusFilter}`;
+    }
+    if (projectId) {
+      endpoint += `&project_id=${projectId}`;
     }
     const data = await this.request('GET', endpoint);
     return data.issues || [];
@@ -160,13 +163,15 @@ async function handleMcp(request) {
         // Tool 1: List my tasks
         server.registerTool('list_my_tasks', {
           title: 'List My Tasks',
-          description: 'List tasks assigned to you with status filtering',
+          description: 'List tasks assigned to you or other users with status and project filtering',
           inputSchema: {
             status_filter: z.enum(['open', 'closed', 'all']).default('open').describe('Status filter: open, closed, or all'),
+            project_id: z.number().int().positive().optional().describe('Filter by project ID (optional)'),
+            assigned_to_id: z.union([z.number().int().positive(), z.literal('me')]).default('me').describe('User ID or "me" for current user (default: me)'),
           },
-        }, async ({ status_filter }) => {
+        }, async ({ status_filter, project_id, assigned_to_id }) => {
           try {
-            const issues = await redmineClient.getMyIssues(status_filter);
+            const issues = await redmineClient.getMyIssues(status_filter, project_id, assigned_to_id);
             if (issues.length === 0) return { content: [{ type: 'text', text: '📭 No tasks found.' }] };
             let result = `📋 Tasks (${issues.length}):\n\n`;
             for (const issue of issues) {
