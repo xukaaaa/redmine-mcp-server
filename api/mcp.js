@@ -52,12 +52,12 @@ class RedmineClient {
       issue_id: params.issue_id,
       hours: params.hours,
       comments: params.comment,
-      activity_id: 14,
+      activity_id: parseInt(params.activity_id),
       spent_on: params.spent_on || new Date().toISOString().split('T')[0],
       custom_fields: [
         {
           id: 64,
-          value: params.process || 'Coding'
+          value: params.process
         }
       ]
     };
@@ -165,8 +165,8 @@ async function handleMcp(request) {
           title: 'List My Tasks',
           description: 'List tasks assigned to you or other users with status and project filtering',
           inputSchema: {
+            project_id: z.number().int().positive().describe('Project ID (required)'),
             status_filter: z.enum(['open', 'closed', 'all']).default('open').describe('Status filter: open, closed, or all'),
-            project_id: z.number().int().positive().optional().describe('Filter by project ID (optional)'),
             assigned_to_id: z.union([z.number().int().positive(), z.literal('me')]).default('me').describe('User ID or "me" for current user (default: me)'),
           },
         }, async ({ status_filter, project_id, assigned_to_id }) => {
@@ -228,21 +228,23 @@ async function handleMcp(request) {
         // Tool 3: Log time
         server.registerTool('log_time', {
           title: 'Log Time Entry',
-          description: 'Log time entry on a task (Activity: Create, Process: Coding)',
+          description: 'Log time entry on a task with activity and process selection',
           inputSchema: {
             issue_id: z.number().int().positive().describe('Issue ID'),
             hours: z.number().positive().describe('Hours spent (e.g., 1.5)'),
             comment: z.string().describe('Work description'),
-            process: z.string().optional().describe('Process type (default: Coding)'),
+            activity_id: z.enum(['19', '14', '15', '16', '18']).describe('Activity: 19=Study, 14=Create, 15=Review, 16=Correct, 18=Test'),
+            process: z.enum(['Preparation', 'Management', 'Requirement', 'Design', 'Coding', 'Unit Test', 'Integration Test', 'System Test', 'UAT Support']).describe('Process type'),
             spent_on: z.string().optional().describe('Date in YYYY-MM-DD format (optional, defaults to today)'),
           },
         }, async (params) => {
           try {
             await redmineClient.logTime(params);
+            const activityNames = { '19': 'Study', '14': 'Create', '15': 'Review', '16': 'Correct', '18': 'Test' };
             let result = `✅ Logged ${params.hours}h on task #${params.issue_id}\n`;
             result += `   Comment: ${params.comment}\n`;
-            result += `   Activity: Create (14)\n`;
-            result += `   Process: ${params.process || 'Coding'}`;
+            result += `   Activity: ${activityNames[params.activity_id]} (${params.activity_id})\n`;
+            result += `   Process: ${params.process}`;
             return { content: [{ type: 'text', text: result }] };
           } catch (error) {
             return { content: [{ type: 'text', text: `❌ Error: ${error.message}` }] };
