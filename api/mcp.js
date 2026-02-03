@@ -110,17 +110,30 @@ class RedmineClient {
     return data.issue;
   }
 
-  async getUserInfo(username) {
-    if (!username) {
-      const data = await this.request('GET', '/users/current.json');
-      return data.user;
+  async getProjectMembers(projectId, offset = 0, limit = 100) {
+    const endpoint = `/projects/${projectId}/memberships.json?offset=${offset}&limit=${limit}`;
+    const data = await this.request('GET', endpoint);
+
+    // If there are more results, fetch all pages
+    let allMemberships = data.memberships || [];
+    const totalCount = data.total_count || 0;
+
+    if (totalCount > limit) {
+      // Fetch remaining pages
+      const remainingPages = Math.ceil((totalCount - limit) / limit);
+      for (let i = 1; i <= remainingPages; i++) {
+        const nextOffset = offset + (i * limit);
+        const nextData = await this.request('GET', `/projects/${projectId}/memberships.json?offset=${nextOffset}&limit=${limit}`);
+        allMemberships = allMemberships.concat(nextData.memberships || []);
+      }
     }
-    const data = await this.request('GET', `/users.json?name=${username}`);
-    const users = data.users || [];
-    if (users.length === 0) {
-      throw new Error(`User '${username}' not found`);
-    }
-    return users[0];
+
+    return {
+      memberships: allMemberships,
+      total_count: totalCount,
+      offset: 0,
+      limit: allMemberships.length
+    };
   }
 }
 
@@ -439,21 +452,49 @@ async function handleMcp(request) {
           }
         });
 
-        // Tool 11: Get user info
-        server.registerTool('get_user_info', {
-          title: 'Get User Info',
-          description: 'Get user information by username (or current user if not specified)',
+        // Tool 11: List project members
+        server.registerTool('list_project_members', {
+          title: 'List Project Members',
+          description: 'Get list of ALL project members with their roles and information',
           inputSchema: {
-            username: z.string().optional().describe('Username to search for (optional, default: current user)'),
+            project_id: z.union([z.number().int().positive(), z.string()]).describe('Project ID (number) or project identifier (string)'),
           },
-        }, async ({ username }) => {
+        }, async ({ project_id }) => {
           try {
-            const user = await redmineClient.getUserInfo(username);
-            let result = `👤 User Information:\n\n`;
-            result += `ID: ${user.id}\n`;
-            result += `Username: ${user.login}\n`;
-            result += `Name: ${user.firstname} ${user.lastname}\n`;
-            result += `Email: ${user.mail}\n`;
+            const data = await redmineClient.getProjectMembers(project_id);
+
+            if (data.memberships.length === 0) {
+              return { content: [{ type: 'text', text: '📭 No members found in this project.' }] };
+            }
+
+            let result = `👥 Project Members (${data.total_count} total):\n\n`;
+
+            // Group by role for better readability
+            const byRole = {};
+            for (const membership of data.memberships) {
+              const roleName = membership.roles[0]?.name || 'No Role';
+              if (!byRole[roleName]) byRole[roleName] = [];
+
+              const memberInfo = {
+                id: membership.id,
+                name: membership.user?.name || membership.group?.name || 'Unknown',
+                type: membership.user ? 'User' : 'Group',
+                userId: membership.user?.id || membership.group?.id,
+                inherited: membership.roles[0]?.inherited || false
+              };
+              byRole[roleName].push(memberInfo);
+            }
+
+            // Display grouped by role
+            for (const [role, members] of Object.entries(byRole).sort()) {
+              result += `\n📌 ${role} (${members.length}):\n`;
+              for (const member of members) {
+                const inheritedTag = member.inherited ? ' (inherited)' : '';
+                const typeIcon = member.type === 'Group' ? '👥' : '👤';
+                result += `  ${typeIcon} ${member.name} (ID: ${member.userId})${inheritedTag}\n`;
+              }
+            }
+
             return { content: [{ type: 'text', text: result }] };
           } catch (error) {
             return { content: [{ type: 'text', text: `❌ Error: ${error.message}` }] };
