@@ -64,8 +64,11 @@ class RedmineClient {
     await this.request('POST', '/time_entries.json', { time_entry: timeEntry });
   }
 
-  async updateIssueStatus(issueId, statusId) {
-    await this.request('PUT', `/issues/${issueId}.json`, { issue: { status_id: statusId } });
+  async updateIssueStatus(issueId, statusId, actualStartDate, actualDueDate) {
+    const issue = { status_id: statusId };
+    if (actualStartDate) issue.actual_start_date = actualStartDate;
+    if (actualDueDate) issue.actual_due_date = actualDueDate;
+    await this.request('PUT', `/issues/${issueId}.json`, { issue });
   }
 
   async updateProgress(issueId, percent) {
@@ -267,15 +270,20 @@ async function handleMcp(request) {
         // Tool 4: Update issue status
         server.registerTool('update_issue_status', {
           title: 'Update Issue Status',
-          description: 'Change issue status',
+          description: 'Change issue status (may require actual dates for Completed status depending on workflow configuration)',
           inputSchema: {
             issue_id: z.number().int().positive().describe('Issue ID'),
-            status_id: z.number().int().positive().describe('Status ID (e.g., 1=New, 2=In Progress, 3=Resolved)'),
+            status_id: z.number().int().positive().describe('Status ID (e.g., 11=Open, 10=In Progress, 7=Completed, 5=Closed)'),
+            actual_start_date: z.string().optional().describe('Actual start date (YYYY-MM-DD) - May be required when status is Completed'),
+            actual_due_date: z.string().optional().describe('Actual end date (YYYY-MM-DD) - May be required when status is Completed'),
           },
-        }, async ({ issue_id, status_id }) => {
+        }, async ({ issue_id, status_id, actual_start_date, actual_due_date }) => {
           try {
-            await redmineClient.updateIssueStatus(issue_id, status_id);
-            return { content: [{ type: 'text', text: `✅ Updated task #${issue_id} status to ${status_id}` }] };
+            await redmineClient.updateIssueStatus(issue_id, status_id, actual_start_date, actual_due_date);
+            let result = `✅ Updated task #${issue_id} status to ${status_id}`;
+            if (actual_start_date) result += `\n   Actual start: ${actual_start_date}`;
+            if (actual_due_date) result += `\n   Actual end: ${actual_due_date}`;
+            return { content: [{ type: 'text', text: result }] };
           } catch (error) {
             return { content: [{ type: 'text', text: `❌ Error: ${error.message}` }] };
           }
