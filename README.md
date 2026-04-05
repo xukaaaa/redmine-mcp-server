@@ -70,7 +70,7 @@ claude mcp add --transport http redmine "https://redmine-mcp-server.vercel.app/a
 | `list_my_tasks` | List tasks assigned to you | `status_filter`: open/closed/all |
 | `get_issue_details` | Get detailed info about an issue | `issue_id`: number |
 | `log_time` | Log time entry | `issue_id`, `hours`, `comment`, `activity_id` (opt), `spent_on` (opt) |
-| `update_issue_status` | Change issue status | `issue_id`, `status_id` |
+| `update_issue_status` | Change issue status and optionally update actual dates via matching custom fields or standard Redmine fields | `issue_id`, `status_id`, `actual_start_date` (opt), `actual_due_date` (opt) |
 | `update_progress` | Update completion percentage | `issue_id`, `percent` (0-100) |
 | `add_note` | Add a comment to an issue | `issue_id`, `note` |
 | `get_today_logs` | View today's time entries | - |
@@ -84,6 +84,7 @@ Ask Claude:
 - "What's the status of issue #123?"
 - "Log 2 hours on task #456 for code review"
 - "Mark issue #789 as resolved"
+- "Mark issue #789 as completed with actual start 2026-04-01 and actual end 2026-04-05" (maps to Act.Start / Act.Finish custom fields when present)
 - "Update task #101 to 80% complete"
 - "How many hours have I logged today?"
 - "Show me my time logs from 2025-01-20 to 2025-01-31"

@@ -66,8 +66,35 @@ class RedmineClient {
 
   async updateIssueStatus(issueId, statusId, actualStartDate, actualDueDate) {
     const issue = { status_id: statusId };
-    if (actualStartDate) issue.actual_start_date = actualStartDate;
-    if (actualDueDate) issue.actual_due_date = actualDueDate;
+
+    if (actualStartDate || actualDueDate) {
+      const issueDetails = await this.getIssueDetails(issueId);
+      const customFieldIdsByName = Object.fromEntries(
+        (issueDetails.custom_fields || []).map((field) => [field.name, field.id])
+      );
+      const customFields = [];
+
+      if (actualStartDate) {
+        if (customFieldIdsByName['Act.Start']) {
+          customFields.push({ id: customFieldIdsByName['Act.Start'], value: actualStartDate });
+        } else {
+          issue.actual_start_date = actualStartDate;
+        }
+      }
+
+      if (actualDueDate) {
+        if (customFieldIdsByName['Act.Finish']) {
+          customFields.push({ id: customFieldIdsByName['Act.Finish'], value: actualDueDate });
+        } else {
+          issue.actual_due_date = actualDueDate;
+        }
+      }
+
+      if (customFields.length > 0) {
+        issue.custom_fields = customFields;
+      }
+    }
+
     await this.request('PUT', `/issues/${issueId}.json`, { issue });
   }
 
@@ -270,12 +297,12 @@ async function handleMcp(request) {
         // Tool 4: Update issue status
         server.registerTool('update_issue_status', {
           title: 'Update Issue Status',
-          description: 'Change issue status (may require actual dates for Completed status depending on workflow configuration)',
+          description: 'Change issue status and optionally update actual dates via matching custom fields or standard Redmine fields',
           inputSchema: {
             issue_id: z.number().int().positive().describe('Issue ID'),
             status_id: z.number().int().positive().describe('Status ID (e.g., 11=Open, 10=In Progress, 7=Completed, 5=Closed)'),
-            actual_start_date: z.string().optional().describe('Actual start date (YYYY-MM-DD) - May be required when status is Completed'),
-            actual_due_date: z.string().optional().describe('Actual end date (YYYY-MM-DD) - May be required when status is Completed'),
+            actual_start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Actual start date (YYYY-MM-DD); mapped to custom field Act.Start when available'),
+            actual_due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Actual end date (YYYY-MM-DD); mapped to custom field Act.Finish when available'),
           },
         }, async ({ issue_id, status_id, actual_start_date, actual_due_date }) => {
           try {
